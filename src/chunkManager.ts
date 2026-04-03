@@ -22,10 +22,15 @@ export interface ChunkManagerDeps {
   };
 }
 
-let deps: ChunkManagerDeps;
+let deps: ChunkManagerDeps | undefined;
 
 export function init(d: ChunkManagerDeps): void {
   deps = d;
+}
+
+function getDeps(): ChunkManagerDeps {
+  if (!deps) throw new Error("[chunkManager] init() must be called before use");
+  return deps;
 }
 
 /** How long (ms) to wait after a user stops speaking before flushing their buffer. */
@@ -88,7 +93,7 @@ function clearTimers(s: UserChunkState): void {
  * Creates their state machine if needed and starts their max-duration timer.
  */
 export function onUserStartedSpeaking(userId: string, displayName: string): void {
-  if (deps.sessionManager.isPaused()) return;
+  if (getDeps().sessionManager.isPaused()) return;
   const s = getOrCreate(userId, displayName);
   if (s.state !== "idle") return; // already buffering or mid-flush
 
@@ -100,7 +105,7 @@ export function onUserStartedSpeaking(userId: string, displayName: string): void
       s.maxTimer = null;
       console.log(`[chunkManager] Max duration reached for ${s.displayName}, flushing.`);
       doFlush(userId).catch(console.error);
-    }, deps.config.maxChunkMs);
+    }, getDeps().config.maxChunkMs);
   }
 }
 
@@ -165,9 +170,9 @@ function evaluateFlush(userId: string): void {
   if (!s || s.state !== "buffering") return;
 
   const bufferedMs = userBuffers.getUserBufferedMs(userId);
-  if (bufferedMs < deps.config.minChunkMs) {
+  if (bufferedMs < getDeps().config.minChunkMs) {
     console.log(
-      `[chunkManager] ${s.displayName}: ${bufferedMs.toFixed(0)}ms buffered (min ${deps.config.minChunkMs}ms), waiting.`
+      `[chunkManager] ${s.displayName}: ${bufferedMs.toFixed(0)}ms buffered (min ${getDeps().config.minChunkMs}ms), waiting.`
     );
     return;
   }
@@ -184,9 +189,9 @@ async function doFlush(userId: string): Promise<void> {
   s.state = "flushing";
 
   // Silence detection — discard before assigning a sequence number so no gaps form
-  if (deps.config.silenceRmsThreshold > 0) {
+  if (getDeps().config.silenceRmsThreshold > 0) {
     const rms = userBuffers.getUserRms(userId);
-    if (rms < deps.config.silenceRmsThreshold) {
+    if (rms < getDeps().config.silenceRmsThreshold) {
       console.log(
         `[chunkManager] ${s.displayName}: silent chunk (RMS ${rms.toFixed(0)}), discarding.`
       );
@@ -210,9 +215,9 @@ async function doFlush(userId: string): Promise<void> {
 
   // Transcribe asynchronously; per-user ordering queue ensures their own chunks
   // are posted in recording order even if transcriptions finish out of sequence.
-  const p: Promise<void> = deps.transcribe(wav, speaker)
+  const p: Promise<void> = getDeps().transcribe(wav, speaker)
     .then(({ words, transcriptId }) => {
-      if (transcriptId) deps.sessionManager.addTranscriptId(transcriptId);
+      if (transcriptId) getDeps().sessionManager.addTranscriptId(transcriptId);
       s.pendingResults.set(seq, { seq, words, chunkStartMs, speaker });
       processQueue(userId);
     })
@@ -240,16 +245,16 @@ function processQueue(userId: string): void {
 }
 
 async function postResult(result: PendingResult): Promise<void> {
-  const session = deps.sessionManager.getSession();
+  const session = getDeps().sessionManager.getSession();
   if (!session) return;
 
   const lines = buildTranscriptLines(result.words, result.speaker, result.chunkStartMs);
   if (lines.length === 0) return;
 
   const sortKey = result.chunkStartMs + (result.words[0]?.start ?? 0);
-  deps.sessionManager.accumulateLines(sortKey, result.speaker, lines);
+  getDeps().sessionManager.accumulateLines(sortKey, result.speaker, lines);
 
-  await deps.transcriptLogger
+  await getDeps().transcriptLogger
     .appendLines(lines, session.logFilePath)
     .catch((err) => console.warn("[chunkManager] Log write failed:", err));
 }
