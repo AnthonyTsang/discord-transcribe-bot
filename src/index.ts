@@ -27,7 +27,10 @@ import {
 import { config } from "./config.js";
 import { setupVoiceHandler } from "./voiceHandler.js";
 import * as chunkManager from "./chunkManager.js";
+import { init as initChunkManager } from "./chunkManager.js";
+import { transcribe } from "./transcriber.js";
 import * as sessionManager from "./sessionManager.js";
+import * as transcriptLogger from "./transcriptLogger.js";
 import * as userBuffers from "./userBuffers.js";
 import { addWord, removeWord, getWords } from "./wordBoostDb.js";
 import {
@@ -642,6 +645,10 @@ client.once("clientReady", async (readyClient) => {
     });
     console.log("[bot] Global slash commands registered (may take up to 1 h to propagate).");
   }
+
+  // ── Initialise chunkManager with its dependencies ──────────────────────────
+
+  initChunkManager({ config, transcribe, sessionManager, transcriptLogger });
 
   // ── Auto-join if both channels are available ───────────────────────────────
 

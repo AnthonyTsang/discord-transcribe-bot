@@ -1,9 +1,32 @@
-import { config } from "./config.js";
 import * as userBuffers from "./userBuffers.js";
-import { transcribe, type TranscriptWord } from "./transcriber.js";
+import type { TranscriptWord } from "./transcriber.js";
+import type { TranscribeResult } from "./transcriber.js";
 import { buildTranscriptLines } from "./poster.js";
-import * as sessionManager from "./sessionManager.js";
-import * as transcriptLogger from "./transcriptLogger.js";
+import type { Session } from "./sessionManager.js";
+
+export interface ChunkManagerDeps {
+  config: {
+    minChunkMs: number;
+    maxChunkMs: number;
+    silenceRmsThreshold: number;
+  };
+  transcribe: (wav: Buffer, speaker?: string) => Promise<TranscribeResult>;
+  sessionManager: {
+    getSession(): Session | null;
+    isPaused(): boolean;
+    addTranscriptId(id: string): void;
+    accumulateLines(sortKey: number, speaker: string, lines: string[]): void;
+  };
+  transcriptLogger: {
+    appendLines(lines: string[], filePath: string): Promise<void>;
+  };
+}
+
+let deps: ChunkManagerDeps;
+
+export function init(d: ChunkManagerDeps): void {
+  deps = d;
+}
 
 /** How long (ms) to wait after a user stops speaking before flushing their buffer. */
 const SPEAKER_SWITCH_DEBOUNCE_MS = 200;
@@ -65,7 +88,7 @@ function clearTimers(s: UserChunkState): void {
  * Creates their state machine if needed and starts their max-duration timer.
  */
 export function onUserStartedSpeaking(userId: string, displayName: string): void {
-  if (sessionManager.isPaused()) return;
+  if (deps.sessionManager.isPaused()) return;
   const s = getOrCreate(userId, displayName);
   if (s.state !== "idle") return; // already buffering or mid-flush
 
@@ -77,7 +100,7 @@ export function onUserStartedSpeaking(userId: string, displayName: string): void
       s.maxTimer = null;
       console.log(`[chunkManager] Max duration reached for ${s.displayName}, flushing.`);
       doFlush(userId).catch(console.error);
-    }, config.maxChunkMs);
+    }, deps.config.maxChunkMs);
   }
 }
 
@@ -142,9 +165,9 @@ function evaluateFlush(userId: string): void {
   if (!s || s.state !== "buffering") return;
 
   const bufferedMs = userBuffers.getUserBufferedMs(userId);
-  if (bufferedMs < config.minChunkMs) {
+  if (bufferedMs < deps.config.minChunkMs) {
     console.log(
-      `[chunkManager] ${s.displayName}: ${bufferedMs.toFixed(0)}ms buffered (min ${config.minChunkMs}ms), waiting.`
+      `[chunkManager] ${s.displayName}: ${bufferedMs.toFixed(0)}ms buffered (min ${deps.config.minChunkMs}ms), waiting.`
     );
     return;
   }
@@ -161,9 +184,9 @@ async function doFlush(userId: string): Promise<void> {
   s.state = "flushing";
 
   // Silence detection — discard before assigning a sequence number so no gaps form
-  if (config.silenceRmsThreshold > 0) {
+  if (deps.config.silenceRmsThreshold > 0) {
     const rms = userBuffers.getUserRms(userId);
-    if (rms < config.silenceRmsThreshold) {
+    if (rms < deps.config.silenceRmsThreshold) {
       console.log(
         `[chunkManager] ${s.displayName}: silent chunk (RMS ${rms.toFixed(0)}), discarding.`
       );
@@ -187,9 +210,9 @@ async function doFlush(userId: string): Promise<void> {
 
   // Transcribe asynchronously; per-user ordering queue ensures their own chunks
   // are posted in recording order even if transcriptions finish out of sequence.
-  const p: Promise<void> = transcribe(wav, speaker)
+  const p: Promise<void> = deps.transcribe(wav, speaker)
     .then(({ words, transcriptId }) => {
-      if (transcriptId) sessionManager.addTranscriptId(transcriptId);
+      if (transcriptId) deps.sessionManager.addTranscriptId(transcriptId);
       s.pendingResults.set(seq, { seq, words, chunkStartMs, speaker });
       processQueue(userId);
     })
@@ -217,16 +240,16 @@ function processQueue(userId: string): void {
 }
 
 async function postResult(result: PendingResult): Promise<void> {
-  const session = sessionManager.getSession();
+  const session = deps.sessionManager.getSession();
   if (!session) return;
 
   const lines = buildTranscriptLines(result.words, result.speaker, result.chunkStartMs);
   if (lines.length === 0) return;
 
   const sortKey = result.chunkStartMs + (result.words[0]?.start ?? 0);
-  sessionManager.accumulateLines(sortKey, result.speaker, lines);
+  deps.sessionManager.accumulateLines(sortKey, result.speaker, lines);
 
-  await transcriptLogger
+  await deps.transcriptLogger
     .appendLines(lines, session.logFilePath)
     .catch((err) => console.warn("[chunkManager] Log write failed:", err));
 }
