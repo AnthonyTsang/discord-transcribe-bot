@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 
+// Schema must mirror src/db.ts — keep in sync manually.
 export function makeTestDb(): Database {
   const db = new Database(":memory:");
 

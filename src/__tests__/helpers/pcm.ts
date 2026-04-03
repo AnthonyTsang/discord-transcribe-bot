@@ -8,7 +8,8 @@ export function makePcmBuffer(durationMs: number, amplitude: number): Buffer {
 
   let offset = 0;
   for (let frame = 0; frame < totalFrames; frame++) {
-    const sample = Math.round(amplitude * Math.sin(2 * Math.PI * 440 * frame / sampleRate));
+    const freqHz = 440; // concert A — arbitrary test tone
+    const sample = Math.round(amplitude * Math.sin(2 * Math.PI * freqHz * frame / sampleRate));
     buffer.writeInt16LE(sample, offset);
     offset += bytesPerSample;
     buffer.writeInt16LE(sample, offset);
