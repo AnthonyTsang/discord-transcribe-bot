@@ -8,13 +8,10 @@ export function makePcmBuffer(durationMs: number, amplitude: number): Buffer {
 
   let offset = 0;
   for (let frame = 0; frame < totalFrames; frame++) {
-    const left = frame * channels;
-    const right = frame * channels + 1;
-    const leftSample = Math.round(amplitude * Math.sin(2 * Math.PI * 440 * left / sampleRate));
-    const rightSample = Math.round(amplitude * Math.sin(2 * Math.PI * 440 * right / sampleRate));
-    buffer.writeInt16LE(leftSample, offset);
+    const sample = Math.round(amplitude * Math.sin(2 * Math.PI * 440 * frame / sampleRate));
+    buffer.writeInt16LE(sample, offset);
     offset += bytesPerSample;
-    buffer.writeInt16LE(rightSample, offset);
+    buffer.writeInt16LE(sample, offset);
     offset += bytesPerSample;
   }
 
