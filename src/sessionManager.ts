@@ -3,7 +3,7 @@ import {
   type TextChannel,
   type AnyThreadChannel,
 } from "discord.js";
-import { join } from "path";
+import { join, basename } from "path";
 
 const TRANSCRIPTS_DIR = join(import.meta.dir, "..", "transcripts");
 
@@ -101,18 +101,13 @@ export async function endSession(): Promise<void> {
   }
 
   if (merged.length > 0) {
-    await session.thread.send("📝 **Full Transcript**").catch(() => {});
-    let batch = "";
-    for (const { line } of merged) {
-      const candidate = batch.length === 0 ? line : batch + "\n" + line;
-      if (candidate.length > 1900) {
-        await session.thread.send(batch).catch(() => {});
-        batch = line;
-      } else {
-        batch = candidate;
-      }
-    }
-    if (batch.length > 0) await session.thread.send(batch).catch(() => {});
+    const content = merged.map(({ line }) => line).join("\n");
+    await session.thread
+      .send({
+        content: "📝 **Full Transcript**",
+        files: [{ attachment: Buffer.from(content, "utf8"), name: basename(session.logFilePath) }],
+      })
+      .catch(() => {});
   }
 
   const chunks = session.transcriptIds.length;
