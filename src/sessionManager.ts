@@ -101,13 +101,13 @@ export async function endSession(): Promise<void> {
   }
 
   if (merged.length > 0) {
-    const content = merged.map(({ line }) => line).join("\n");
+    const transcriptText = merged.map(({ line }) => line).join("\n");
     await session.thread
       .send({
         content: "📝 **Full Transcript**",
-        files: [{ attachment: Buffer.from(content, "utf8"), name: basename(session.logFilePath) }],
+        files: [{ attachment: Buffer.from(transcriptText, "utf8"), name: basename(session.logFilePath) }],
       })
-      .catch(() => {});
+      .catch((err) => console.error("[session] Failed to post transcript:", err));
   }
 
   const chunks = session.transcriptIds.length;
